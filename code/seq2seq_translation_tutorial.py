@@ -42,7 +42,7 @@ class EncoderRNN(nn.Module):
         else:
             return result
 
-class DecoderRNN(nn.Module):
+class DecoderRNN(nn.Module):###直接在這裏面output gru的reset gate和 update gate
     
     def __init__(self, hidden_size, output_size, n_layers=1):
         super(DecoderRNN, self).__init__()
@@ -58,12 +58,69 @@ class DecoderRNN(nn.Module):
         self.softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, input, batch_size, hidden):
-        output = self.embedding(input).view(1, batch_size, self.hidden_size)
-        for i in range(self.n_layers):
-            output = F.relu(output)
-            output, hidden = self.gru(output, hidden)
+        #output = self.embedding(input).view(1, batch_size, self.hidden_size)
+        #for i in range(self.n_layers):
+        #    output = F.relu(output)
+        #    output, hidden = self.gru(output, hidden)
+        input_embedding = self.embedding(input).view(1, batch_size, self.hidden_size)
+        relu_input = F.relu(input_embedding)
+        output, hidden_out = self.gru(relu_input, hidden)
+
+        print("self.gru.weight_ih_l0: ", self.gru.weight_ih_l0)
+        print("relu_input: ", relu_input)
+        print("input_embedding.shape: ", input_embedding.shape)#torch.Size([1, 128, 150])
+        print("relu_input.shape: ", relu_input.shape)#torch.Size([1, 128, 150])
+        print('gru.weight_ih_l0.size()', self.gru.weight_ih_l0.size())  # torch.Size([450, 150])
+        #(W_ir|W_iz|W_in), of shape (3*hidden_size x input_size)
+        print('gru.weight_hh_l0.size()', self.gru.weight_hh_l0.size())
+        #(W_hr|W_hz|W_hn), of shape (3*hidden_size x hidden_size)
+        print('gru.bias_ih_l0.size()', self.gru.bias_ih_l0.size())#torch.Size([450])
+        # (b_ir|b_iz|b_in), of shape (3*hidden_size)
+        print('gru.bias_hh_l0.size()', self.gru.bias_hh_l0.size())#torch.Size([450])
+        #b_hr|b_hz|b_hn), of shape (3*hidden_size)
+        w_ih = self.gru.weight_ih_l0
+        b_ih = self.gru.bias_ih_l0
+        w_hh =  self.gru.weight_hh_l0
+        b_hh = self.gru.bias_hh_l0
+        print("type(w_ih): ", type(w_ih))
+        print("type(b_ih): ", type(b_ih))
+        print("type(w_hh): ", type(w_hh))
+        print("type(b_hh): ", type(b_hh))
+        print("type(input): ", type(input))
+        relu_input = torch.squeeze(relu_input)
+        hidden = torch.squeeze(hidden)
+        #gi = F.linear(input, w_ih, b_ih)
+        gi = F.linear(relu_input, w_ih, b_ih)
+        gh = F.linear(hidden, w_hh, b_hh)
+        i_r, i_i, i_n = gi.chunk(3, 1)
+        h_r, h_i, h_n = gh.chunk(3, 1)
+        print("gi.size(): ", gi.size())
+        print("gh.size(): ", gh.size())
+        print("i_r.size(): ", i_r.size())
+        print("h_r.size(): ", h_r.size())
+        print("i_i.size(): ", i_i.size())
+        print("h_i.size(): ", h_i.size())
+        resetgate = F.sigmoid(i_r + h_r)
+        inputgate = F.sigmoid(i_i + h_i)
+        newgate = F.tanh(i_n + resetgate * h_n)
+        hy = newgate + inputgate * (hidden - newgate)
+        print("resetgate")
+        print(resetgate)
+        print("inputgate")
+        print(inputgate)
+        print("newgate")
+        print(newgate)
+        print("hy")
+        print(hy)
+        print("resetgate.size(): ", resetgate.size())
+        print("inputgate.size(): ", inputgate.size())
+        print("newgate.size(): ", newgate.size())
+        print("hy.size(): ", hy.size())
+
+        exit()
+
         output = self.softmax(self.out(output[0]))
-        return output, hidden, self.gru
+        return output, hidden_out, self.gru
 
     def initHidden(self, batch_size):
         result = Variable(torch.zeros(1, batch_size, self.hidden_size))
@@ -200,19 +257,32 @@ def evaluate(encoder, decoder, loader, max_length):
         for di in range(target_length):
             decoder_output, decoder_hidden, gru= decoder(
                 decoder_input, batch_size, decoder_hidden)
-            print("gru.weight_ih_l0")###只有weight_ih_l0可以拿來用，11, 12全部都不能用
-            print(gru.weight_ih_l0)
-            print("gru.weight_hh_l0")
-            print(gru.weight_hh_l0)
-            print('gru.weight_ih0.size()', gru.weight_ih_l0.size())#torch.Size([384, 128])
-            print('gru.bias_hh0.size()', gru.weight_hh_l0.size())
+            #print("gru.weight_ih_l0")###只有weight_ih_l0可以拿來用，11, 12全部都不能用
+            #print(gru.weight_ih_l0)
+            print("di: ", di)
+            print("decoder_input")
+            print(decoder_input)
+            print()
+
+            print('decoder_input.size()', decoder_input.size())#torch.Size([128])
+            print("type(decoder_input): ", type(decoder_input))#
+            print("decoder_output")
+            print(decoder_output)
+            print('decoder_output.size()', decoder_output.size())#torch.Size([128, 91710])
+            print("type(gru.weight_ih_l0): ", type(gru.weight_ih_l0))#<class 'torch.nn.parameter.Parameter'>
+            print('gru.weight_ih_l0.size()', gru.weight_ih_l0.size())#torch.Size([384, 128])
+            print('gru.weight_hh_l0.size()', gru.weight_hh_l0.size())
+            print('gru.bias_ih_l0.size()', gru.bias_ih_l0.size())
+            print('gru.bias_hh_l0.size()', gru.bias_hh_l0.size())
             #print("gru.state.state_dict(): ", gru.state_dict())
             print("gru.state.state_dict().keys(): ", gru.state_dict().keys())
             #['weight_ih_l0', 'weight_hh_l0', 'bias_ih_l0', 'bias_hh_l0']
             exit()
+
             topv, topi = decoder_output.data.topk(1)
             decoder_input = decoder_input.cuda() if use_cuda else decoder_input
             loss += criterion(decoder_output, target_variable[di])
+        exit()
         """
         print("validation_bacth_count: ", validation_bacth_count)
         batch_size = batch_x.size()[0]
@@ -255,7 +325,7 @@ EOS_token = 1
 PAD_token = 2
 MAX_LENGTH = 20#20
 teacher_forcing_ratio = 0.5
-hidden_size = 128 #a-z+SOS+EOS+PAD
+hidden_size = 150#a-z+SOS+EOS+PAD  以前是128
 batch_size = 128#128
 epochs = 100#15
 ###testing
